@@ -3,12 +3,14 @@ import { Rank3Tensor } from './tensor.js';
 import { TensorThreeScene } from './threeScene.js';
 import { DatasetView } from './datasetView.js';
 import { COLORMAPS, normalizeValue } from './colormaps.js';
+import { LearningExperience } from './learningExperience.js';
 
 // Application State
 const state = {
   tensor: null,
   threeScene: null,
   datasetView: null,
+  learningExpInstance: null,
   isPlaying: false,
   currentTime: 0,
   playbackSpeed: 1.0, // Seconds per slice multiplier
@@ -176,6 +178,23 @@ function setupHeaderControls() {
   resetCamBtn.addEventListener('click', () => {
     state.threeScene.setCameraIsometric();
     setActiveCameraPill('iso');
+  });
+
+  // Guided Learning Experience from Scratch
+  const openLearningBtn = document.getElementById('open-learning-btn');
+  const learningView = document.getElementById('learning-experience-view');
+
+  openLearningBtn.addEventListener('click', () => {
+    // Pause explorer playback if running
+    if (state.isPlaying) togglePlayPause();
+
+    learningView.classList.remove('hidden');
+    state.learningExpInstance = new LearningExperience(learningView, () => {
+      learningView.classList.add('hidden');
+      state.learningExpInstance = null;
+      // Trigger resize on main three scene
+      if (state.threeScene) state.threeScene.onWindowResize();
+    });
   });
 }
 
