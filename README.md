@@ -9,9 +9,12 @@
 
 **TensorView** provides an intuitive, interactive bridge between the **abstract mathematical formulation** of a 3rd-order tensor and its **physical spatiotemporal reality**.
 
-It visualizes a Rank-3 tensor $\mathcal{T} \in \mathbb{R}^{T \times H \times W}$ simultaneously in two synchronized representations:
-1. **The Dataset View (The Numbers):** An interactive matrix view displaying the discrete numbers across time and space, complete with heatmaps, inline editing, canonical slicing (frontal, horizontal, lateral), and statistical decomposition metrics.
-2. **The Cube View (The 3D Volumetric Animation):** A 3D Three.js voxel lattice displaying how values evolve over the time dimension ($t$ in seconds), with time-travel playback controls, laser scanplanes, and an **Explode Slices** slider to inspect internal structures.
+It visualizes a Rank-3 tensor $\mathcal{T} \in \mathbb{R}^{T \times H \times W}$ across **three synchronized views**:
+1. **Front View of Animation (Left):** A dedicated 2D frontal projection screen displaying the active matrix slice $\mathcal{T}[t, :, :]$ animating smoothly across time $t$ in seconds.
+2. **3D Volumetric Space (Center):** An interactive Three.js 3D voxel lattice displaying the full spatial volume, active laser scanplanes, and an **Explode Slices** slider to dissect interior layers.
+3. **Editing & Numbers Panel (Right):** A comprehensive mathematical numerical editor with live in-cell editing, canonical slicing (frontal, horizontal, lateral), and statistical decomposition metrics.
+
+It also features a dedicated **🎓 Learn From Scratch** guided mode for beginners comparing Vector Spaces to Numbers step by step.
 
 ---
 

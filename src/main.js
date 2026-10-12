@@ -4,12 +4,14 @@ import { TensorThreeScene } from './threeScene.js';
 import { DatasetView } from './datasetView.js';
 import { COLORMAPS, normalizeValue } from './colormaps.js';
 import { LearningExperience } from './learningExperience.js';
+import { FrontView } from './frontView.js';
 
 // Application State
 const state = {
   tensor: null,
   threeScene: null,
   datasetView: null,
+  frontView: null,
   learningExpInstance: null,
   isPlaying: false,
   currentTime: 0,
@@ -25,13 +27,19 @@ function init() {
   // 1. Initialize Tensor Model
   state.tensor = new Rank3Tensor(4, 4, 4);
 
-  // 2. Initialize Three.js Volumetric Cube Scene
+  // 2. Initialize Front View (Left: 2D Frontal Animation)
+  const frontContainer = document.getElementById('front-view-container');
+  state.frontView = new FrontView(frontContainer, state.tensor, {
+    colormap: state.colormap,
+  });
+
+  // 3. Initialize Three.js Volumetric Cube Scene (Center: 3D Space)
   const threeContainer = document.getElementById('three-container');
   state.threeScene = new TensorThreeScene(threeContainer, state.tensor, {
     colormap: state.colormap,
   });
 
-  // 3. Initialize Dataset View
+  // 4. Initialize Dataset View (Right: Editing / Numbers Panel)
   const datasetContainer = document.getElementById('dataset-container');
   state.datasetView = new DatasetView(datasetContainer, state.tensor, {
     colormap: state.colormap,
@@ -91,16 +99,18 @@ function setupInteractivitySync() {
     triggerMathJax();
   };
 
-  // Three.js -> Dataset View
+  // Three.js -> Dataset View & Front View
   state.threeScene.onHoverCallback = (hit) => {
     if (!hit) {
       if (!state.threeScene.selectedVoxel) {
         updateHUD(null, null, null);
       }
       state.datasetView.highlightCell(null, null, null);
+      if (state.frontView) state.frontView.highlightCell(null, null, null);
     } else {
       updateHUD(hit.t, hit.i, hit.j, hit.val, false);
       state.datasetView.highlightCell(hit.t, hit.i, hit.j);
+      if (state.frontView) state.frontView.highlightCell(hit.t, hit.i, hit.j);
     }
   };
 
@@ -115,9 +125,10 @@ function setupInteractivitySync() {
     }
   };
 
-  // Dataset View -> Three.js
+  // Dataset View -> Three.js & Front View
   state.datasetView.onCellHover = (t, i, j) => {
     state.threeScene.highlightVoxel(t, i, j);
+    if (state.frontView) state.frontView.highlightCell(t, i, j);
     if (t !== null) {
       const val = state.tensor.get(t, i, j);
       updateHUD(t, i, j, val, false);
@@ -135,6 +146,31 @@ function setupInteractivitySync() {
       updateHUD(null, null, null);
     }
   };
+
+  // Front View -> Three.js & Dataset View
+  if (state.frontView) {
+    state.frontView.onCellHover = (t, i, j) => {
+      state.threeScene.highlightVoxel(t, i, j);
+      state.datasetView.highlightCell(t, i, j);
+      if (t !== null) {
+        const val = state.tensor.get(t, i, j);
+        updateHUD(t, i, j, val, false);
+      } else if (!state.threeScene.selectedVoxel) {
+        updateHUD(null, null, null);
+      }
+    };
+
+    state.frontView.onCellSelect = (t, i, j) => {
+      state.threeScene.selectVoxel(t, i, j);
+      state.datasetView.selectCell(t, i, j);
+      if (t !== null) {
+        const val = state.tensor.get(t, i, j);
+        updateHUD(t, i, j, val, true);
+      } else {
+        updateHUD(null, null, null);
+      }
+    };
+  }
 
   // Dataset View Slice Change -> Sync Time Slider
   state.datasetView.onSliceSelect = (sliceIdx) => {
@@ -162,6 +198,7 @@ function setupHeaderControls() {
       state.threeScene.refreshColors();
       state.datasetView.updateValues();
       state.datasetView.updateStats();
+      if (state.frontView) state.frontView.drawFrame();
     }
   });
 
@@ -171,6 +208,7 @@ function setupHeaderControls() {
     state.colormap = e.target.value;
     state.threeScene.setColormap(state.colormap);
     state.datasetView.setColormap(state.colormap);
+    if (state.frontView) state.frontView.setColormap(state.colormap);
   });
 
   // Reset Camera View
@@ -310,6 +348,7 @@ function setTimeStep(t) {
   state.currentTime = t;
   updateTimeUI(t);
   state.threeScene.setActiveTimeSlice(t);
+  if (state.frontView) state.frontView.setTimeSlice(t);
 
   // If DatasetView is in frontal slice mode (mode 0), keep in sync
   if (state.datasetView.sliceMode === 0) {
@@ -373,6 +412,7 @@ function setupCustomFormula() {
     state.threeScene.refreshColors();
     state.datasetView.updateValues();
     state.datasetView.updateStats();
+    if (state.frontView) state.frontView.drawFrame();
   };
 
   applyBtn.addEventListener('click', applyFormula);

@@ -88,10 +88,15 @@
       </div>
     </div>
 
-    <!-- Main Split Workspace -->
-    <main class="main-layout">
-      <!-- Left Panel: 3D Cube View (Three.js) -->
-      <section class="viewport-section" aria-label="3D Volumetric Cube View">
+    <!-- Main Three-View Workspace -->
+    <main class="main-layout three-column-layout">
+      <!-- View 1 (Left): Front View of Animation -->
+      <section class="front-view-section" id="front-view-container" aria-label="2D Front View of Animation">
+        <!-- Rendered reactively by FrontView class -->
+      </section>
+
+      <!-- View 2 (Center): 3D Space View (Three.js) -->
+      <section class="viewport-section" id="center-3d-section" aria-label="3D Volumetric Cube View">
         <div id="three-container" class="three-canvas-container">
           <!-- Three.js Canvas attaches here -->
 
