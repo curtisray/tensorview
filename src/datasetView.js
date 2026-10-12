@@ -1,4 +1,4 @@
-import { getHexColor, normalizeValue } from './colormaps.js';
+import { getHexColor, normalizeValue, getColormapCssGradient } from './colormaps.js';
 
 export class DatasetView {
   constructor(containerElement, tensor, options = {}) {
@@ -8,7 +8,10 @@ export class DatasetView {
     this.activeSliceIndex = 0;
     this.sliceMode = 0; // 0 = Frontal T[t, :, :], 1 = Horizontal T[:, i, :], 2 = Lateral T[:, :, j]
     this.hoveredCell = null; // {t, i, j}
-    this.selectedCell = null; // {t, i, j}
+    this.selectedCell = { t: 0, i: 0, j: 0 }; // Default to first voxel
+    this.activeIntensity = 0.75;
+    this.isPainting = false;
+    this.isMouseDown = false;
 
     // Callbacks
     this.onCellHover = null;
@@ -19,22 +22,35 @@ export class DatasetView {
     this.tensor.subscribe((event) => {
       this.updateValues();
       this.updateStats();
+      this.syncSelectedCubeDisplay();
       if (event === 'shape_changed') {
+        this.selectedCell = { t: 0, i: 0, j: 0 };
         this.render();
       }
+    });
+
+    // Track global mouse up for drag-painting
+    window.addEventListener('pointerup', () => {
+      this.isMouseDown = false;
     });
   }
 
   setColormap(cmap) {
     this.colormap = cmap;
     this.updateValues();
+    this.syncSelectedCubeDisplay();
   }
 
   setActiveSlice(index) {
     const maxIdx = this.sliceMode === 0 ? this.tensor.T : this.sliceMode === 1 ? this.tensor.H : this.tensor.W;
     this.activeSliceIndex = Math.max(0, Math.min(maxIdx - 1, Math.round(index)));
+    // Keep selected cell's slice in sync if frontal
+    if (this.sliceMode === 0 && this.selectedCell) {
+      this.selectedCell.t = this.activeSliceIndex;
+    }
     this.updateActiveSliceTable();
     this.updateGalleryHighlights();
+    this.syncSelectedCubeDisplay();
   }
 
   setSliceMode(mode) {
@@ -50,8 +66,14 @@ export class DatasetView {
   }
 
   selectCell(t, i, j) {
-    this.selectedCell = (t !== null && i !== null && j !== null) ? { t, i, j } : null;
+    if (t !== null && i !== null && j !== null) {
+      this.selectedCell = { t, i, j };
+      this.activeIntensity = this.tensor.get(t, i, j);
+    } else {
+      this.selectedCell = null;
+    }
     this.updateCellHighlightStyles();
+    this.syncSelectedCubeDisplay();
   }
 
   render() {
@@ -80,16 +102,64 @@ export class DatasetView {
           </div>
         </div>
 
-        <!-- Slice Scrubber Bar -->
-        <div class="slice-scrubber-row">
-          <div class="slice-info-badge" id="active-slice-label">
-            ${this.getSliceLabel()}
-          </div>
-          <div class="slice-scrubber-controls">
+        <!-- Frame Navigation & Animation Authoring Toolbar -->
+        <div class="slice-toolbar-row">
+          <div class="slice-frame-nav">
             <button class="icon-btn-small" id="prev-slice-btn" title="Previous slice">‹</button>
-            <input type="range" class="slice-slider" id="slice-slider" 
-              min="0" max="${this.getMaxSliceIndex()}" value="${this.activeSliceIndex}" step="1">
+            <span class="slice-frame-label" id="active-slice-label">${this.getSliceLabel()}</span>
             <button class="icon-btn-small" id="next-slice-btn" title="Next slice">›</button>
+          </div>
+
+          <div class="frame-anim-actions">
+            <button class="anim-action-btn primary-action" id="copy-slice-next-btn" title="Duplicate this slice to next frame (t+1) to animate easily">
+              📋 Copy to Next
+            </button>
+            <button class="anim-action-btn" id="shift-slice-left-btn" title="Shift pattern left">⬅</button>
+            <button class="anim-action-btn" id="shift-slice-right-btn" title="Shift pattern right">➡</button>
+            <button class="anim-action-btn" id="invert-slice-btn" title="Invert positive/negative values">🔄 Invert</button>
+            <button class="anim-action-btn danger" id="clear-slice-btn" title="Set all values in this slice to zero">🧹 Clear</button>
+          </div>
+        </div>
+
+        <!-- Selected Cube Intensity & Color Studio (Replaced old slider) -->
+        <div class="cube-intensity-card">
+          <div class="intensity-card-header">
+            <div class="selected-cube-badge-group">
+              <span class="intensity-target-label">Selected Cube:</span>
+              <span class="selected-cube-coords" id="selected-cube-coords">
+                ${this.selectedCell ? `T[${this.selectedCell.t}, ${this.selectedCell.i}, ${this.selectedCell.j}]` : 'None'}
+              </span>
+              <span class="selected-color-swatch" id="selected-color-swatch"></span>
+            </div>
+
+            <div class="intensity-value-badge">
+              <span class="intensity-hint-label">Value:</span>
+              <span class="intensity-num" id="selected-intensity-num">+0.00</span>
+            </div>
+          </div>
+
+          <!-- Color Spectrum Slider Track -->
+          <div class="intensity-slider-wrapper">
+            <input type="range" class="intensity-color-slider" id="cube-intensity-slider" 
+              min="-1" max="1" step="0.02" value="0.0"
+              title="Drag to change intensity & color of selected cube" />
+          </div>
+
+          <!-- Quick Value Stops & Paint Mode Toggle -->
+          <div class="intensity-palette-bar">
+            <div class="palette-swatches">
+              <button class="swatch-btn" data-val="-1.0" title="Set to -1.00 (Min)">-1.0</button>
+              <button class="swatch-btn" data-val="-0.5" title="Set to -0.50">-0.5</button>
+              <button class="swatch-btn" data-val="0.0" title="Set to 0.00 (Zero)">0.0</button>
+              <button class="swatch-btn" data-val="0.5" title="Set to +0.50">+0.5</button>
+              <button class="swatch-btn" data-val="1.0" title="Set to +1.00 (Max)">+1.0</button>
+            </div>
+
+            <div class="paint-toggle-wrapper">
+              <button class="paint-mode-btn ${this.isPainting ? 'active' : ''}" id="paint-mode-toggle" title="Click & drag to paint this intensity onto matrix cells">
+                🖌️ Paint Mode
+              </button>
+            </div>
           </div>
         </div>
 
@@ -97,7 +167,7 @@ export class DatasetView {
         <div class="active-matrix-card">
           <div class="matrix-card-header">
             <span class="matrix-card-title">Active 2D Matrix Slice</span>
-            <span class="matrix-hint">Click any cell to edit value &bull; Hover to highlight in 3D</span>
+            <span class="matrix-hint">Click to select cube &bull; Drag to paint &bull; Scroll wheel to nudge</span>
           </div>
           <div class="matrix-scroll-wrapper" id="matrix-table-container">
             <!-- Injected by updateActiveSliceTable -->
@@ -107,8 +177,8 @@ export class DatasetView {
         <!-- All Slices Mini Gallery (Only shown for Frontal/Time mode) -->
         <div class="all-slices-section" id="all-slices-gallery">
           <div class="all-slices-header">
-            <span>Time Dimension Slices \\(t = 0 \\dots ${this.tensor.T - 1}\\)</span>
-            <span class="subtext">Click any slice to jump</span>
+            <span>Time Dimension Keyframes \\(t = 0 \\dots ${this.tensor.T - 1}\\)</span>
+            <span class="subtext">Click any frame to jump &amp; edit</span>
           </div>
           <div class="mini-slices-carousel" id="mini-slices-container">
             <!-- Injected by updateGallery -->
@@ -126,6 +196,7 @@ export class DatasetView {
     this.updateActiveSliceTable();
     this.updateGallery();
     this.updateStats();
+    this.syncSelectedCubeDisplay();
   }
 
   getMaxSliceIndex() {
@@ -136,11 +207,11 @@ export class DatasetView {
 
   getSliceLabel() {
     if (this.sliceMode === 0) {
-      return `Frontal Slice \\(t = ${this.activeSliceIndex}\\) &bull; Mode-1`;
+      return `Frame t = ${this.activeSliceIndex} / ${this.tensor.T - 1} &bull; Mode-1`;
     } else if (this.sliceMode === 1) {
-      return `Horizontal Slice \\(i = ${this.activeSliceIndex}\\) &bull; Mode-2`;
+      return `Horizontal Slice i = ${this.activeSliceIndex} &bull; Mode-2`;
     } else {
-      return `Lateral Slice \\(j = ${this.activeSliceIndex}\\) &bull; Mode-3`;
+      return `Lateral Slice j = ${this.activeSliceIndex} &bull; Mode-3`;
     }
   }
 
@@ -154,23 +225,13 @@ export class DatasetView {
       });
     });
 
-    // Slider
-    const slider = this.container.querySelector('#slice-slider');
-    if (slider) {
-      slider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        this.setActiveSlice(val);
-        if (this.onSliceSelect) this.onSliceSelect(val);
-      });
-    }
-
+    // Frame Navigation Previous / Next
     const prevBtn = this.container.querySelector('#prev-slice-btn');
     const nextBtn = this.container.querySelector('#next-slice-btn');
     if (prevBtn) {
       prevBtn.addEventListener('click', () => {
         if (this.activeSliceIndex > 0) {
           this.setActiveSlice(this.activeSliceIndex - 1);
-          if (slider) slider.value = this.activeSliceIndex;
           if (this.onSliceSelect) this.onSliceSelect(this.activeSliceIndex);
         }
       });
@@ -179,18 +240,131 @@ export class DatasetView {
       nextBtn.addEventListener('click', () => {
         if (this.activeSliceIndex < this.getMaxSliceIndex()) {
           this.setActiveSlice(this.activeSliceIndex + 1);
-          if (slider) slider.value = this.activeSliceIndex;
           if (this.onSliceSelect) this.onSliceSelect(this.activeSliceIndex);
         }
       });
     }
+
+    // Animation Authoring Actions
+    const copyNextBtn = this.container.querySelector('#copy-slice-next-btn');
+    if (copyNextBtn) {
+      copyNextBtn.addEventListener('click', () => {
+        const currentT = this.activeSliceIndex;
+        const nextT = (currentT + 1) % this.tensor.T;
+        this.tensor.copySlice(currentT, nextT);
+        this.setActiveSlice(nextT);
+        if (this.onSliceSelect) this.onSliceSelect(nextT);
+      });
+    }
+
+    const clearBtn = this.container.querySelector('#clear-slice-btn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        this.tensor.clearSlice(this.activeSliceIndex);
+        this.updateActiveSliceTable();
+      });
+    }
+
+    const invertBtn = this.container.querySelector('#invert-slice-btn');
+    if (invertBtn) {
+      invertBtn.addEventListener('click', () => {
+        this.tensor.invertSlice(this.activeSliceIndex);
+        this.updateActiveSliceTable();
+      });
+    }
+
+    const shiftLeftBtn = this.container.querySelector('#shift-slice-left-btn');
+    if (shiftLeftBtn) {
+      shiftLeftBtn.addEventListener('click', () => {
+        this.tensor.shiftSlice(this.activeSliceIndex, 0, -1);
+        this.updateActiveSliceTable();
+      });
+    }
+
+    const shiftRightBtn = this.container.querySelector('#shift-slice-right-btn');
+    if (shiftRightBtn) {
+      shiftRightBtn.addEventListener('click', () => {
+        this.tensor.shiftSlice(this.activeSliceIndex, 0, 1);
+        this.updateActiveSliceTable();
+      });
+    }
+
+    // Cube Intensity Slider (Direct Color & Value Control)
+    const intensitySlider = this.container.querySelector('#cube-intensity-slider');
+    if (intensitySlider) {
+      intensitySlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        this.activeIntensity = val;
+        if (this.selectedCell) {
+          const { t, i, j } = this.selectedCell;
+          this.tensor.set(t, i, j, val);
+          this.updateActiveSliceTable();
+          this.syncSelectedCubeDisplay();
+          if (this.onCellSelect) this.onCellSelect(t, i, j);
+        }
+      });
+    }
+
+    // Quick Palette Swatch Buttons
+    const swatchBtns = this.container.querySelectorAll('.swatch-btn');
+    swatchBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const val = parseFloat(btn.dataset.val);
+        this.activeIntensity = val;
+        if (intensitySlider) intensitySlider.value = val;
+        if (this.selectedCell) {
+          const { t, i, j } = this.selectedCell;
+          this.tensor.set(t, i, j, val);
+          this.updateActiveSliceTable();
+          this.syncSelectedCubeDisplay();
+          if (this.onCellSelect) this.onCellSelect(t, i, j);
+        }
+      });
+    });
+
+    // Paint Mode Toggle
+    const paintToggle = this.container.querySelector('#paint-mode-toggle');
+    if (paintToggle) {
+      paintToggle.addEventListener('click', () => {
+        this.isPainting = !this.isPainting;
+        paintToggle.classList.toggle('active', this.isPainting);
+      });
+    }
+  }
+
+  syncSelectedCubeDisplay() {
+    const coordsEl = this.container.querySelector('#selected-cube-coords');
+    const swatchEl = this.container.querySelector('#selected-color-swatch');
+    const numEl = this.container.querySelector('#selected-intensity-num');
+    const sliderEl = this.container.querySelector('#cube-intensity-slider');
+    if (!coordsEl || !swatchEl || !numEl || !sliderEl) return;
+
+    // Update gradient background of the slider track based on current colormap
+    sliderEl.style.background = getColormapCssGradient(this.colormap);
+
+    if (!this.selectedCell) {
+      coordsEl.textContent = 'None';
+      swatchEl.style.backgroundColor = 'transparent';
+      numEl.textContent = '--';
+      return;
+    }
+
+    const { t, i, j } = this.selectedCell;
+    const val = this.tensor.get(t, i, j);
+    const stats = this.tensor.stats();
+    const norm = normalizeValue(val, stats.min, stats.max);
+    const hex = getHexColor(norm, this.colormap);
+
+    coordsEl.textContent = `T[${t}, ${i}, ${j}]`;
+    swatchEl.style.backgroundColor = hex;
+    swatchEl.style.boxShadow = `0 0 10px ${hex}`;
+    numEl.textContent = (val >= 0 ? '+' : '') + val.toFixed(2);
+    sliderEl.value = val;
   }
 
   updateActiveSliceTable() {
     const tableContainer = this.container.querySelector('#matrix-table-container');
     const labelBadge = this.container.querySelector('#active-slice-label');
-    const slider = this.container.querySelector('#slice-slider');
-    if (slider) slider.value = this.activeSliceIndex;
     if (labelBadge) labelBadge.innerHTML = this.getSliceLabel();
     if (!tableContainer) return;
 
@@ -243,7 +417,7 @@ export class DatasetView {
         }
 
         const cellId = `cell_${t}_${i}_${j}`;
-        const formattedVal = val.toFixed(3);
+        const formattedVal = val.toFixed(2);
         const textColor = norm > 0.45 && norm < 0.85 ? '#000000' : '#ffffff';
 
         html += `
@@ -276,14 +450,41 @@ export class DatasetView {
       const i = parseInt(cell.dataset.i, 10);
       const j = parseInt(cell.dataset.j, 10);
 
-      // Hover
-      cell.addEventListener('mouseenter', () => {
+      // Pointer down: Select or Paint
+      cell.addEventListener('pointerdown', (e) => {
+        this.isMouseDown = true;
+        this.selectedCell = { t, i, j };
+
+        if (this.isPainting) {
+          // Stamp active intensity immediately
+          this.tensor.set(t, i, j, this.activeIntensity);
+          this.updateActiveSliceTable();
+        } else {
+          this.activeIntensity = this.tensor.get(t, i, j);
+        }
+
+        this.updateCellHighlightStyles();
+        this.syncSelectedCubeDisplay();
+        if (this.onCellSelect) this.onCellSelect(t, i, j);
+      });
+
+      // Pointer enter: Hover or Drag-to-Paint
+      cell.addEventListener('pointerenter', () => {
         this.hoveredCell = { t, i, j };
         this.updateCellHighlightStyles();
         if (this.onCellHover) this.onCellHover(t, i, j);
+
+        // If mouse is held down and paint mode is on (or drag-painting)
+        if (this.isMouseDown && this.isPainting) {
+          this.selectedCell = { t, i, j };
+          this.tensor.set(t, i, j, this.activeIntensity);
+          this.updateActiveSliceTable();
+          this.syncSelectedCubeDisplay();
+          if (this.onCellSelect) this.onCellSelect(t, i, j);
+        }
       });
 
-      cell.addEventListener('mouseleave', () => {
+      cell.addEventListener('pointerleave', () => {
         if (this.hoveredCell && this.hoveredCell.t === t && this.hoveredCell.i === i && this.hoveredCell.j === j) {
           this.hoveredCell = null;
           this.updateCellHighlightStyles();
@@ -291,19 +492,21 @@ export class DatasetView {
         }
       });
 
-      // Click to edit
-      cell.addEventListener('click', (e) => {
-        // Toggle selection
-        if (this.selectedCell && this.selectedCell.t === t && this.selectedCell.i === i && this.selectedCell.j === j) {
-          // If already selected, open edit prompt
-          this.openCellInlineEditor(cell, t, i, j);
-        } else {
-          this.selectedCell = { t, i, j };
-          this.updateCellHighlightStyles();
-          if (this.onCellSelect) this.onCellSelect(t, i, j);
-        }
-      });
+      // Mouse wheel: Quick intensity nudge up/down
+      cell.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.05 : -0.05;
+        const current = this.tensor.get(t, i, j);
+        const nextVal = Math.round((current + delta) * 100) / 100;
+        this.tensor.set(t, i, j, nextVal);
+        this.selectedCell = { t, i, j };
+        this.activeIntensity = nextVal;
+        this.updateActiveSliceTable();
+        this.syncSelectedCubeDisplay();
+        if (this.onCellSelect) this.onCellSelect(t, i, j);
+      }, { passive: false });
 
+      // Double-click still opens exact inline number input
       cell.addEventListener('dblclick', () => {
         this.openCellInlineEditor(cell, t, i, j);
       });
@@ -322,6 +525,8 @@ export class DatasetView {
       const newVal = parseFloat(input.value);
       if (!isNaN(newVal)) {
         this.tensor.set(t, i, j, newVal);
+        this.activeIntensity = newVal;
+        this.syncSelectedCubeDisplay();
       }
       this.updateActiveSliceTable();
     };

@@ -174,6 +174,70 @@ export class Rank3Tensor {
   }
 
   /**
+   * Animation tool: Copy all values from slice fromT to toT
+   */
+  copySlice(fromT, toT) {
+    if (fromT < 0 || fromT >= this.T || toT < 0 || toT >= this.T) return;
+    for (let i = 0; i < this.H; i++) {
+      for (let j = 0; j < this.W; j++) {
+        const val = this.get(fromT, i, j);
+        this.data[this.getIndex(toT, i, j)] = val;
+      }
+    }
+    this.notify('data_reset', { action: 'copy_slice', fromT, toT });
+  }
+
+  /**
+   * Animation tool: Clear all values in slice t to zero
+   */
+  clearSlice(t) {
+    if (t < 0 || t >= this.T) return;
+    for (let i = 0; i < this.H; i++) {
+      for (let j = 0; j < this.W; j++) {
+        this.data[this.getIndex(t, i, j)] = 0;
+      }
+    }
+    this.notify('data_reset', { action: 'clear_slice', t });
+  }
+
+  /**
+   * Animation tool: Invert values in slice t (* -1)
+   */
+  invertSlice(t) {
+    if (t < 0 || t >= this.T) return;
+    for (let i = 0; i < this.H; i++) {
+      for (let j = 0; j < this.W; j++) {
+        const idx = this.getIndex(t, i, j);
+        this.data[idx] = -this.data[idx];
+      }
+    }
+    this.notify('data_reset', { action: 'invert_slice', t });
+  }
+
+  /**
+   * Animation tool: Circular spatial shift (deltaRow, deltaCol) on slice t
+   */
+  shiftSlice(t, deltaRow, deltaCol) {
+    if (t < 0 || t >= this.T) return;
+    const temp = [];
+    for (let i = 0; i < this.H; i++) {
+      const row = [];
+      for (let j = 0; j < this.W; j++) {
+        row.push(this.get(t, i, j));
+      }
+      temp.push(row);
+    }
+    for (let i = 0; i < this.H; i++) {
+      for (let j = 0; j < this.W; j++) {
+        const srcI = (i - deltaRow + this.H * 10) % this.H;
+        const srcJ = (j - deltaCol + this.W * 10) % this.W;
+        this.data[this.getIndex(t, i, j)] = temp[srcI][srcJ];
+      }
+    }
+    this.notify('data_reset', { action: 'shift_slice', t });
+  }
+
+  /**
    * Populate tensor with mathematical presets
    */
   applyPreset(presetName, customParam = null) {

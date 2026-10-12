@@ -107,3 +107,15 @@ export function normalizeValue(val, min = -1, max = 1) {
   if (Math.abs(max - min) < 1e-6) return 0.5;
   return Math.max(0, Math.min(1, (val - min) / (max - min)));
 }
+
+/**
+ * Returns a CSS linear-gradient string representing the colormap
+ */
+export function getColormapCssGradient(colormapKey = 'plasma') {
+  const cmap = COLORMAPS[colormapKey] || COLORMAPS.plasma;
+  const stops = cmap.stops.map((s) => {
+    const hex = rgbToHex(s.r, s.g, s.b);
+    return `${hex} ${(s.pos * 100).toFixed(0)}%`;
+  }).join(', ');
+  return `linear-gradient(to right, ${stops})`;
+}
