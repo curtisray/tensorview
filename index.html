@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Interactive 3D mathematical visualization and learning playground for rank-3 tensors with synchronized numerical dataset and volumetric cube views." />
+    <title>TensorView &bull; 3D Rank-3 Tensor Visualizer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-mark">
+          <div class="cube-icon">
+            <span class="cube-face f-front"></span>
+            <span class="cube-face f-top"></span>
+            <span class="cube-face f-right"></span>
+          </div>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">Tensor<span class="gradient-text">View</span></h1>
+          <span class="brand-badge">Rank-3 Model</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <!-- Preset Selector Dropdown -->
+        <div class="control-group">
+          <label for="preset-select" class="control-label">Formula / Preset:</label>
+          <select id="preset-select" class="dropdown-select">
+            <option value="standing_wave">🌊 Standing 3D Wave</option>
+            <option value="heat_diffusion">🔥 Heat Diffusion</option>
+            <option value="traveling_pulse">⚡ Traveling Soliton</option>
+            <option value="rotating_dipole">🔄 Rotating Dipole</option>
+            <option value="superdiagonal">✨ Superdiagonal (CP-Rank 1)</option>
+            <option value="random_normal">🎲 Random Normal</option>
+            <option value="custom">✏️ Custom Expression...</option>
+          </select>
+        </div>
+
+        <!-- Shape Dimension Button -->
+        <button id="dimension-modal-btn" class="pill-btn dimension-pill" title="Configure tensor dimensions T, H, W">
+          <span class="dim-label">Shape</span>
+          <span class="dim-value" id="header-shape-display">4 &times; 4 &times; 4</span>
+          <span class="dim-icon">⚙️</span>
+        </button>
+
+        <!-- Colormap Selector -->
+        <div class="control-group">
+          <label for="colormap-select" class="control-label">Palette:</label>
+          <select id="colormap-select" class="dropdown-select">
+            <option value="plasma">Plasma (Neon)</option>
+            <option value="viridis">Viridis (Scientific)</option>
+            <option value="coolwarm">Coolwarm (Diverging)</option>
+            <option value="cyberpunk">Cyberpunk Glow</option>
+            <option value="emerald">Emerald Matrix</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button id="guide-modal-btn" class="header-btn" title="Learn tensor algebra and rank-3 theory">
+          <span class="btn-icon">📘</span> Math Guide
+        </button>
+        <button id="reset-cam-btn" class="header-btn secondary" title="Reset 3D camera to default">
+          <span class="btn-icon">↺</span> Reset View
+        </button>
+      </div>
+    </header>
+
+    <!-- Custom Expression Bar (Collapsible) -->
+    <div id="custom-formula-bar" class="custom-formula-bar hidden">
+      <div class="formula-container">
+        <span class="formula-prefix">\(f(t, y, x) =\)</span>
+        <input type="text" id="custom-formula-input" 
+          value="sin(2 * PI * t / T - sqrt((x - W/2)**2 + (y - H/2)**2))" 
+          placeholder="e.g. sin(t + x) * cos(y)" />
+        <button id="apply-formula-btn" class="primary-btn">Evaluate Tensor</button>
+        <span class="formula-variables-hint">Vars: <code>t, y, x, T, H, W, PI, sin, cos, exp, sqrt</code></span>
+      </div>
+    </div>
+
+    <!-- Main Split Workspace -->
+    <main class="main-layout">
+      <!-- Left Panel: 3D Cube View (Three.js) -->
+      <section class="viewport-section" aria-label="3D Volumetric Cube View">
+        <div id="three-container" class="three-canvas-container">
+          <!-- Three.js Canvas attaches here -->
+
+          <!-- 3D HUD Tooltip / Inspector Overlay -->
+          <div id="hud-inspector" class="hud-card idle">
+            <div class="hud-status-indicator"></div>
+            <div class="hud-content" id="hud-content">
+              <span class="hud-prompt">Hover or click any 3D voxel or dataset cell to inspect</span>
+            </div>
+          </div>
+
+          <!-- Camera View Switcher Floating Pills -->
+          <div class="camera-pill-bar">
+            <button class="cam-pill active" data-preset="iso" title="Isometric 3D Perspective">Isometric</button>
+            <button class="cam-pill" data-preset="front" title="Frontal Time-Plane View (XY)">Frontal (t)</button>
+            <button class="cam-pill" data-preset="top" title="Top-Down View (XZ)">Top</button>
+            <button class="cam-pill" data-preset="side" title="Side Lateral View (ZY)">Side</button>
+          </div>
+
+          <!-- Floating 3D Time Animation & Slice Controls Dock -->
+          <div class="cube-controls-dock">
+            <div class="dock-primary-row">
+              <!-- Play / Pause -->
+              <button id="play-pause-btn" class="play-btn" title="Toggle time animation playback">
+                <span class="play-icon">▶</span>
+              </button>
+
+              <!-- Time Dimension Scrubber -->
+              <div class="timeline-slider-group">
+                <div class="timeline-header">
+                  <span class="timeline-label">Time Dimension (\(t\)):</span>
+                  <span class="timeline-value" id="current-time-display">t = 0 / 3 (0.00s)</span>
+                </div>
+                <input type="range" id="time-scrubber" class="timeline-range" min="0" max="3" value="0" step="1">
+              </div>
+
+              <!-- FPS Speed & Loop -->
+              <div class="playback-options">
+                <select id="fps-select" class="dropdown-select-mini" title="Playback speed">
+                  <option value="0.5">0.5x</option>
+                  <option value="1" selected>1.0x (1s/slice)</option>
+                  <option value="2">2.0x</option>
+                  <option value="4">4.0x</option>
+                </select>
+                <button id="loop-btn" class="icon-btn-toggle active" title="Toggle loop playback">🔁</button>
+              </div>
+            </div>
+
+            <!-- Slice Explode & Visualization Filters -->
+            <div class="dock-secondary-row">
+              <div class="slider-control-item">
+                <span class="slider-label">Explode Slices:</span>
+                <input type="range" id="explode-slider" min="0" max="2.5" step="0.05" value="0.45" />
+                <span class="slider-value" id="explode-value">0.45</span>
+              </div>
+
+              <div class="toggle-control-item">
+                <label class="switch-label">
+                  <input type="checkbox" id="ghost-toggle" checked />
+                  <span class="switch-custom"></span>
+                  <span class="label-text">Ghost Inactive Slices</span>
+                </label>
+              </div>
+
+              <div class="toggle-control-item">
+                <label class="switch-label">
+                  <input type="checkbox" id="isolate-toggle" />
+                  <span class="switch-custom"></span>
+                  <span class="label-text">Isolate Current Slice</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Dataset View (Set of Numbers) -->
+      <section class="dataset-section" id="dataset-container" aria-label="Dataset Numerical Matrix View">
+        <!-- Rendered reactively by DatasetView class -->
+      </section>
+    </main>
+
+    <!-- Dimension Configuration Modal -->
+    <div id="dimension-modal" class="modal-backdrop hidden">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 class="modal-title">Configure Tensor Shape \(\mathcal{T} \in \mathbb{R}^{T \times H \times W}\)</h3>
+          <button class="modal-close-btn" id="close-dim-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            Customize the rank-3 dimensions. Mode-1 is the Time/Depth axis (\(T\)), Mode-2 is Rows/Height (\(H\)), and Mode-3 is Columns/Width (\(W\)).
+          </p>
+
+          <div class="dimension-steppers">
+            <div class="stepper-item">
+              <label>Time Axis (\(T\))</label>
+              <div class="stepper-controls">
+                <button class="step-btn" data-dim="t" data-delta="-1">-</button>
+                <span class="step-val" id="dim-val-t">4</span>
+                <button class="step-btn" data-dim="t" data-delta="1">+</button>
+              </div>
+              <span class="dim-sub">Time frames</span>
+            </div>
+
+            <div class="stepper-item">
+              <label>Height Axis (\(H\))</label>
+              <div class="stepper-controls">
+                <button class="step-btn" data-dim="h" data-delta="-1">-</button>
+                <span class="step-val" id="dim-val-h">4</span>
+                <button class="step-btn" data-dim="h" data-delta="1">+</button>
+              </div>
+              <span class="dim-sub">Matrix rows</span>
+            </div>
+
+            <div class="stepper-item">
+              <label>Width Axis (\(W\))</label>
+              <div class="stepper-controls">
+                <button class="step-btn" data-dim="w" data-delta="-1">-</button>
+                <span class="step-val" id="dim-val-w">4</span>
+                <button class="step-btn" data-dim="w" data-delta="1">+</button>
+              </div>
+              <span class="dim-sub">Matrix cols</span>
+            </div>
+          </div>
+
+          <div class="tensor-total-info">
+            Total Elements: <strong id="modal-total-elements">64</strong> floating-point values.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="secondary-btn" id="cancel-dim-btn">Cancel</button>
+          <button class="primary-btn" id="apply-dim-btn">Apply Dimensions</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mathematical Guide Modal -->
+    <div id="guide-modal" class="modal-backdrop hidden">
+      <div class="modal-dialog guide-dialog">
+        <div class="modal-header">
+          <h3 class="modal-title">📖 Understanding Rank-3 Tensors in Mathematics & ML</h3>
+          <button class="modal-close-btn" id="close-guide-modal">&times;</button>
+        </div>
+        <div class="modal-body guide-body">
+          <div class="guide-grid">
+            <div class="guide-card">
+              <h4>1. What is a Rank-3 Tensor?</h4>
+              <p>
+                In multilinear algebra, a <strong>rank-3 (or 3rd-order) tensor</strong> \(\mathcal{T} \in \mathbb{R}^{T \times H \times W}\) 
+                is a 3-dimensional array of numbers addressed by three indices:
+              </p>
+              <div class="code-math-box">\(\mathcal{T}_{t, i, j} \quad \text{where } t \in [0, T-1], \; i \in [0, H-1], \; j \in [0, W-1]\)</div>
+              <p>
+                A scalar is rank-0, a vector is rank-1, a matrix is rank-2, and a block/cube of numbers is rank-3.
+              </p>
+            </div>
+
+            <div class="guide-card">
+              <h4>2. The Three Canonical Slices</h4>
+              <p>
+                Slicing a rank-3 tensor by holding one index constant produces a 2D matrix:
+              </p>
+              <ul>
+                <li><strong>Frontal Slices:</strong> \(\mathcal{T}_{t, :, :}\) (holding time/depth fixed) &mdash; video frames or matrix snapshots over time.</li>
+                <li><strong>Horizontal Slices:</strong> \(\mathcal{T}_{:, i, :}\) (holding row fixed) &mdash; cross-sections across all time.</li>
+                <li><strong>Lateral Slices:</strong> \(\mathcal{T}_{:, :, j}\) (holding col fixed) &mdash; vertical planes through the tensor.</li>
+              </ul>
+            </div>
+
+            <div class="guide-card">
+              <h4>3. Real-World Applications</h4>
+              <ul>
+                <li><strong>Computer Vision & Video:</strong> \((T \text{ seconds/frames}, H \text{ height}, W \text{ width})\).</li>
+                <li><strong>Deep Learning Batches:</strong> \((B \text{ batch size}, S \text{ sequence length}, D \text{ embedding dimension})\).</li>
+                <li><strong>Spatiotemporal Physics:</strong> Wave equations, fluid dynamics, and temperature diffusion over 2D surfaces in time.</li>
+                <li><strong>Neuroimaging & Medicine:</strong> 3D MRI / CT volumetric voxel scans.</li>
+              </ul>
+            </div>
+
+            <div class="guide-card">
+              <h4>4. Tensor Decompositions (CP & Tucker)</h4>
+              <p>
+                Just as matrices have Singular Value Decomposition (SVD), rank-3 tensors can be decomposed into sums of rank-1 outer products:
+              </p>
+              <div class="code-math-box">\(\mathcal{T} \approx \sum_{r=1}^R \mathbf{a}_r \circ \mathbf{b}_r \circ \mathbf{c}_r\)</div>
+              <p>
+                Use the <em>Explode Slices</em> slider in TensorView to separate the layers and inspect how rank-1 components combine!
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="primary-btn" id="got-it-guide-btn">Got It!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MathJax for rendering math symbols -->
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" id="MathJax-script" async></script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
